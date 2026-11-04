@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Benedikt Notter · Auktion (Prototyp)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="styles.css?v=77">
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt</a>
+<p class="demo-note">
+  <span>Prototyp: Titel, Preise und Gebote sind Beispiele.</span>
+  <button type="button" class="linklike" data-act="reset">Zurücksetzen</button>
+  <button type="button" class="linklike" data-act="demo-view" id="demo-view"></button>
+</p>
+<header class="site-head">
+  <a class="brand" href="#/">Benedikt Notter <span>Auktion</span></a>
+  <span id="me-chip" class="me-chip" hidden></span>
+  <nav aria-label="Hauptnavigation">
+    <a href="#/katalog" data-nav="katalog">Bilder</a>
+    <a href="#/begehrt" data-nav="begehrt">Begehrt</a>
+    <a href="#/meine-gebote" data-nav="meine-gebote">Meine Gebote</a>
+    <a href="#/favoriten" data-nav="favoriten" class="nav-fav" aria-label="Favoriten">Favoriten</a>
+  </nav>
+</header>
+<main id="main" tabindex="-1"></main>
+<footer class="site-foot">
+  <a href="#/regeln">Spielregeln</a>
+  <a href="#/datenschutz">Datenschutz</a>
+  <a href="https://benediktnotter.ch">benediktnotter.ch</a>
+  <a href="#/cockpit">Cockpit</a>
+</footer>
+<dialog id="sheet" class="sheet" aria-labelledby="sheet-title"></dialog>
+<dialog id="zoom" class="zoom" aria-label="Bild vergrössert"></dialog>
+<div id="qr-print" aria-hidden="true"></div>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="bidding.js?v=77"></script>
+<script src="data.js?v=77"></script>
+<script src="matches.js?v=77"></script>
+<script src="app.js?v=77"></script>
+</body>
+</html>
