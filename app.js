@@ -11,7 +11,11 @@
   const CAT_DEFAULT = { perPage: 4, kind: 'all', order: 'harmony', cover: true, heading: 'Kopfstillstand', subheading: 'Benedikt Notter. Kornschütte Luzern, 3. bis 20. Juni 2027', number: true, title: true, size: true, technique: false, start: true, buy: true, qr: true, pages: true, cellBox: true };
   const QR_DEFAULT = { size: 3, perPage: 12, kind: 'all', from: 1, to: WERKE.length, number: true, title: true, hint: true, image: false, cut: true, marks: true };
 
-  const TYPE = { original: 'Originalzeichnung', original_framed: 'Gerahmte Bleistiftzeichnung', print_aluminium: 'Druck auf Aluminium' };
+  // Werktypen legt Benedikt im Cockpit selbst an. Art: Druck oder Einzelstück. Rahmen: wählbar, schon gerahmt oder keiner.
+  const DEFAULT_TYPES = [
+    { id: 'print_aluminium', label: 'Kunstdruck auf Hahnemühle-Papier', kind: 'print', frame: 'none', technique: 'Lichtechter Pigmentdruck auf Hahnemühlepapier, auf eine Aluminiumplatte aufgezogen' },
+    { id: 'original', label: 'Original-Bleistiftzeichnung', kind: 'original', frame: 'choice', technique: 'Bleistiftzeichnung' },
+  ];
   const NAMES = { r1: 'Anna Keller', r2: 'Marco Frei', r3: 'Lea Wyss', r4: 'Thomas Bühler', r5: 'Sandra Roth', r6: 'Nina Graf', r7: 'Jonas Meier', r8: 'Claudia Huber', r9: 'Reto Amrein', r10: 'Mirjam Steiner', r11: 'David Bucher', r12: 'Eva Zemp', r13: 'Luca Moser', r14: 'Regula Felder' };
   const FORMATS = ['Klein', 'Mittel', 'Gross'];
   const FAMILY = { Rot: '#b8312f', Orange: '#e07b1f', Gelb: '#e8c82e', Grün: '#5c9a4a', Türkis: '#2f9a8c', Blau: '#2d6f9f', Violett: '#7d4a9c', Pink: '#d8437f', Grau: '#8b8b85' };
@@ -51,7 +55,7 @@
     const drafts = WERKE.filter((w) => !w.uploaded && w.mode === 'auction' && !w.seedBids.length && !w.boughtBy && !heroes.includes(w.img)).filter((_, i) => i % 17 === 3).slice(0, gaps.length);
     const edits = {};
     drafts.forEach((w, i) => { edits[w.id] = gaps[i]; });
-    return { lots, me: null, edits, qr: { ...QR_DEFAULT }, cat: { ...CAT_DEFAULT }, views, scans: [], frames: {}, favs: [], uploads: [] };
+    return { lots, me: null, edits, qr: { ...QR_DEFAULT }, cat: { ...CAT_DEFAULT }, views, scans: [], frames: {}, favs: [], uploads: [], types: DEFAULT_TYPES.map((t) => ({ ...t })) };
   }
 
   function load() {
@@ -69,6 +73,13 @@
   // Hochgeladene Bilder: Die Angaben liegen beim Zustand, die Bilddateien in IndexedDB, weil localStorage dafür zu klein ist.
   const BLANK_IMG = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
   S.uploads = S.uploads || [];
+  S.types = S.types || DEFAULT_TYPES.map((t) => ({ ...t }));
+  // Die frühere Kategorie «gerahmt» ist heute ein Werktyp, den Benedikt bei Bedarf selbst anlegt
+  [...S.uploads, ...Object.values(S.edits || {})].forEach((o) => { if (o.type === 'original_framed') o.type = 'original'; });
+  const typeById = (id) => S.types.find((t) => t.id === id) || S.types[0];
+  const typeOf = (w) => typeById(w.type);
+  const typeLabel = (w) => typeOf(w).label;
+  const isPrint = (w) => typeOf(w).kind === 'print';
   function addUploadedWork(meta) {
     const w = { ...meta, img: BLANK_IMG };
     WERKE.push(w);
@@ -84,6 +95,7 @@
   // Die Demo-Ansichten behalten hochgeladene Bilder. Nur «Zurücksetzen» entfernt sie.
   function resetState(dropUploads) {
     const uploads = dropUploads ? [] : S.uploads;
+    const types = dropUploads ? null : S.types;
     const uploadEdits = {};
     uploads.forEach((u) => { if (S.edits[u.id]) uploadEdits[u.id] = S.edits[u.id]; });
     if (dropUploads) {
@@ -98,6 +110,7 @@
     });
     S = seed();
     S.uploads = uploads;
+    if (types) S.types = types;
     Object.assign(S.edits, uploadEdits);
     applyEdits();
   }
@@ -161,7 +174,7 @@
   /* ---------- Was passt zusammen: vorberechneter Prozent-Match ---------- */
 
   // Bildtafeln sind nach Farbe verglichen, Zeichnungen nach Thema und Bildaufbau (werkzeuge/build_catalog.py)
-  const matchGroup = (w) => (w.type === 'print_aluminium' ? 'color' : 'pencil');
+  const matchGroup = (w) => (isPrint(w) ? 'color' : 'pencil');
   const matchIndex = {};
   for (const [group, table] of Object.entries(window.MATCHES)) matchIndex[group] = new Map(table.ids.map((id, i) => [id, i]));
   function matchPct(a, b) {
@@ -213,7 +226,7 @@
   /* ---------- Bausteine ---------- */
 
   // Originale gibt es nur einmal, das soll man sofort sehen
-  const isOriginal = (w) => w.type === 'original' || w.type === 'original_framed';
+  const isOriginal = (w) => typeOf(w).kind === 'original';
   // Was fehlt noch? Erst wenn nichts mehr fehlt, erscheint ein Bild öffentlich.
   function missingFields(w) {
     const list = [];
@@ -240,7 +253,7 @@
     return `--frame-p:${pct(frame, framed)};--mat-p:${pct(mat, matted)}`;
   }
   const art = (w, img) => (isOriginal(w) ? `<span class="art" style="${artStyle(w)}"><span class="art-mat"><span class="art-window">${img}</span></span></span>` : img);
-  const uniqueLabel = (w) => `${TYPE[w.type]}, Einzelstück`;
+  const uniqueLabel = (w) => `${esc(typeLabel(w))}, Einzelstück`;
 
   // Rahmen sind weiss oder aus hellem Holz, immer mit Passepartout
   const FRAMES = {
@@ -251,12 +264,12 @@
   };
   const frameOf = (w) => FRAMES[S.frames[w.id]] || FRAMES.none;
   const frameClass = (w) => {
-    if (w.type === 'original_framed') return ` framed${w.id % 2 ? ' wood' : ''}`;
-    return w.type === 'original' ? frameOf(w).cls : '';
+    if (typeOf(w).frame === 'included') return ` framed${w.id % 2 ? ' wood' : ''}`;
+    return typeOf(w).frame === 'choice' ? frameOf(w).cls : '';
   };
 
   function frameOptions(w) {
-    if (w.type !== 'original' || !available(w)) return '';
+    if (typeOf(w).frame !== 'choice' || !available(w)) return '';
     const current = S.frames[w.id] || 'none';
     return `<div class="frame-options">
       <h3>Passepartout oder Rahmen dazu?</h3>
@@ -271,7 +284,7 @@
   // Verkaufte Bildtafeln gibt es weiterhin als Nachdruck, ausserhalb der Auktion
   function soldNote(w) {
     if (!isSold(w)) return '';
-    if (w.type !== 'print_aluminium') return '<p class="sold-note">Diese Originalzeichnung gibt es nur einmal. Sie hat ein neues Zuhause gefunden.</p>';
+    if (!isPrint(w)) return '<p class="sold-note">Dieses Einzelstück gibt es nur einmal. Es hat ein neues Zuhause gefunden.</p>';
     return `<p class="sold-note"><strong>Verkauft, aber nicht verloren:</strong> Auf Wunsch bekommst du dieses Bild als Nachdruck. Der gehört nicht mehr zur Auktion, es gelten die <a href="https://benediktnotter.ch/bilder-kaufen" target="_blank" rel="noopener">offiziellen Preise auf der Webseite</a>.</p>`;
   }
 
@@ -282,18 +295,41 @@
   // Zeichnung und Bildtafel gehören zusammen, wenn der Titel gleich ist. Gross- und Kleinschreibung, Leerzeichen und Satzzeichen zählen nicht.
   const titleKey = (title) => String(title || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
-  function siblingOf(w) {
+  // Öffentlich zählen nur fertig erfasste Bilder, im Cockpit (all) auch unvollständige
+  function siblingOf(w, all) {
     const key = titleKey(w.title);
     if (!key) return null;
-    const isPrint = w.type === 'print_aluminium';
-    return WERKE.find((x) => x.id !== w.id && isShown(x) && (x.type === 'print_aluminium') !== isPrint && titleKey(x.title) === key) || null;
+    return WERKE.find((x) => x.id !== w.id && (all || isShown(x)) && isPrint(x) !== isPrint(w) && titleKey(x.title) === key) || null;
   }
 
-  const SIBLING_LABEL = { original: 'Originalzeichnung', original_framed: 'gerahmte Bleistiftzeichnung', print_aluminium: 'Bildtafel' };
+  function editDistance(a, b) {
+    let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row = next;
+    }
+    return row[b.length];
+  }
+
+  // Ein Tippfehler trennt Zeichnung und Druck. Fast gleiche Titel werden deshalb im Cockpit gemeldet.
+  function nearSibling(w) {
+    const key = titleKey(w.title);
+    if (key.length < 5 || siblingOf(w, true)) return null;
+    return WERKE.find((x) => x.id !== w.id && isPrint(x) !== isPrint(w) && titleKey(x.title) && editDistance(key, titleKey(x.title)) <= 2) || null;
+  }
+
+  function titleLinkHint(w) {
+    const linked = siblingOf(w, true);
+    if (linked) return `<p class="title-hint is-linked">Verknüpft mit <a href="#/cockpit/bild/${linked.slug}">Nr. ${linked.number}, ${esc(typeLabel(linked))}</a></p>`;
+    const near = nearSibling(w);
+    if (near) return `<p class="title-hint is-near">Fast gleicher Titel bei <a href="#/cockpit/bild/${near.slug}">Nr. ${near.number}, «${esc(near.title)}»</a>. Ist es dasselbe Motiv, schreibe den Namen genau gleich.</p>`;
+    return '';
+  }
 
   function siblingLink(w) {
     const x = siblingOf(w);
-    return x ? `<p class="sibling"><a href="#/werk/${x.slug}">Dieses Motiv gibt es auch als ${SIBLING_LABEL[x.type]}</a></p>` : '';
+    return x ? `<p class="sibling"><a href="#/werk/${x.slug}">Dieses Motiv gibt es auch als ${esc(typeLabel(x))}</a></p>` : '';
   }
 
   function craftHome() {
@@ -372,7 +408,7 @@
       </a>
       <div class="tile-caption">
         <a class="tile tile-text" href="#/werk/${w.slug}" tabindex="-1">
-          ${isOriginal(w) ? `<div class="tile-kind">${uniqueLabel(w)}</div>` : ''}
+          ${isOriginal(w) ? `<div class="tile-kind">${esc(typeLabel(w))}</div>` : ''}
           <h3>${esc(w.title)}</h3>
           <div class="meta"><div data-mytag="${w.id}">${myTag(w)}</div><div data-tile="${w.id}">${priceLine(w)}</div><div class="tile-note">${note || sizeText(w)}</div>${soon ? `<div>Noch <span data-cd="${w.id}"></span></div>` : ''}</div>
         </a>
@@ -431,24 +467,24 @@
     const chosen = [];
     const motifs = new Set();
     const take = (w) => {
-      if (!w || motifs.has(w.motif) || chosen.length >= HERO_COUNT) return;
-      motifs.add(w.motif);
+      const key = w && (titleKey(w.title) || w.id);
+      if (!w || motifs.has(key) || chosen.length >= HERO_COUNT) return;
+      motifs.add(key);
       chosen.push(w);
     };
     // Nur für den Prototyp: Die Zeichnungen sind noch Platzhalter, darum zeigt die Wand fast nur Farbbilder und weit hinten eine Zeichnung.
-    const isPrint = (w) => w.type === 'print_aluminium';
     const longest = Math.max(...lists.map((list) => list.length));
     for (let i = 0; i < longest && chosen.length < HERO_COUNT - 1; i++) {
       lists.forEach((list) => { if (list[i] && isPrint(list[i]) && chosen.length < HERO_COUNT - 1) take(list[i]); });
     }
     // Solange es kaum Aufrufe und Gebote gibt, ergänzt eine harmonische Auswahl der Bildtafeln die Wand
     const order = harmonyOrder();
-    const prints = shown.filter((w) => w.type === 'print_aluminium' && !isSold(w)).sort((a, b) => order.get(a.id) - order.get(b.id));
+    const prints = shown.filter((w) => isPrint(w) && !isSold(w)).sort((a, b) => order.get(a.id) - order.get(b.id));
     const step = Math.max(1, Math.floor(prints.length / HERO_COUNT));
     const fill = (w) => { if (chosen.length < HERO_COUNT - 1) take(w); };
     prints.filter((_, i) => i % step === 0).forEach(fill);
     prints.forEach(fill);
-    const drawing = lists.flat().find((w) => !isPrint(w) && !motifs.has(w.motif));
+    const drawing = lists.flat().find((w) => !isPrint(w) && !motifs.has(titleKey(w.title) || w.id));
     if (drawing) chosen.splice(Math.min(HERO_COUNT - 2, chosen.length), 0, drawing);
     else prints.forEach(take);
     return chosen;
@@ -523,7 +559,7 @@
     ${endLine()}
     <details class="filters" ${active || filtersOpen ? 'open' : ''}>
       <summary>Filter${active ? ` (${active} aktiv)` : ''}</summary>
-      <div class="filter-group"><span>Werktyp</span><div class="chips">${chips('type', Object.entries(TYPE))}</div></div>
+      <div class="filter-group"><span>Werktyp</span><div class="chips">${chips('type', S.types.map((t) => [t.id, t.label]))}</div></div>
       <div class="filter-group"><span>Format</span><div class="chips">${chips('format', FORMATS.map((f) => [f, f]))}</div></div>
       <div class="filter-group"><span>Farben</span><div class="chips">${Object.entries(FAMILY).map(([name, hex]) =>
         `<button type="button" class="swatch" style="background:${hex}" title="${name}" aria-label="${name}" data-act="filter" data-key="family" data-val="${name}" aria-pressed="${filter.family === name}"></button>`).join('')}</div></div>
@@ -586,12 +622,13 @@
   // Mit gewähltem Passepartout oder Rahmen steht zusätzlich das Gesamtmass in den Angaben
   function factsHtml(w) {
     const facts = [
-      ['Werktyp', TYPE[w.type]],
+      ['Werktyp', typeLabel(w)],
       ['Technik', w.technique],
       ['Format', `${w.format}, ${sizeText(w)}`],
     ];
-    const framed = w.type === 'original_framed' || (w.type === 'original' && ['white', 'wood'].includes(S.frames[w.id]));
-    const matted = w.type === 'original' && S.frames[w.id] === 'mat';
+    const frameMode = typeOf(w).frame;
+    const framed = frameMode === 'included' || (frameMode === 'choice' && ['white', 'wood'].includes(S.frames[w.id]));
+    const matted = frameMode === 'choice' && S.frames[w.id] === 'mat';
     if (framed || matted) {
       const edge = 2 * (matCm(w) + (framed ? frameCm(w) : 0));
       facts.push([framed ? 'Mit Rahmen' : 'Mit Passepartout', `${cm(w.sizeCm[0] + edge)} × ${cm(w.sizeCm[1] + edge)} cm`]);
@@ -620,7 +657,7 @@
       <div>
         <span class="num">Nr. ${w.number}</span>
         <div class="work-title"><h1>${esc(w.title)}</h1>${favButton(w, 'on-work')}</div>
-        ${isOriginal(w) ? `<p class="unique-note">${uniqueLabel(w)}. Von Hand mit Bleistift gezeichnet.</p>` : ''}
+        ${isOriginal(w) ? `<p class="unique-note">${uniqueLabel(w)}.${/bleistift/i.test(w.technique) ? ' Von Hand mit Bleistift gezeichnet.' : ''}</p>` : ''}
         <div id="sale-panel" data-work="${w.id}">${salePanel(w)}</div>
         ${frameOptions(w)}
         <dl class="facts" id="work-facts">${factsHtml(w)}</dl>
@@ -787,7 +824,7 @@
   function formatItem(x, isCurrent) {
     const inner = `${art(x, `<img src="${x.img}" alt="${esc(x.title)}" loading="lazy" width="${x.w}" height="${x.h}">`)}
       ${isSold(x) ? '<span class="sold-dot" title="Verkauft"></span>' : ''}`;
-    const frame = x.type === 'original_framed' ? ` framed${x.id % 2 ? ' wood' : ''}` : '';
+    const frame = typeOf(x).frame === 'included' ? ` framed${x.id % 2 ? ' wood' : ''}` : '';
     return `<div class="format-item${isCurrent ? ' is-current' : ''}">
       ${isCurrent ? `<div class="format-pic${frame}">${inner}</div>` : `<a class="format-pic${frame}" href="#/werk/${x.slug}">${inner}</a>`}
       <h3>${isCurrent ? 'Dieses Bild' : esc(x.title)}</h3>
@@ -1054,7 +1091,6 @@
     const r = B.place(lot, who, Math.min(amount, lot.buyNow - 100), now);
     if (!r.ok) return false;
     afterChange(w.id);
-    if (isAtelier() && r.outcome !== 'outbid') toast(`Neues Gebot: ${chf(B.compute(lot).price)} auf «${esc(w.title)}»`);
     if (leader === ME && B.compute(lot).leader !== ME) {
       toast(`Jemand hat dich bei «${esc(w.title)}» überboten. <span class="toast-link">Zum Bild</span>`, `#/werk/${w.slug}`);
     } else if (leader === ME && r.outcome === 'outbid') {
@@ -1202,6 +1238,7 @@
     if (tab === 'bild') return cockpitShell('bilder', cockpitEditor(arg));
     if (tab === 'bilder') return cockpitShell('bilder', cockpitImages());
     if (tab === 'hochladen') return cockpitShell('bilder', cockpitUpload());
+    if (tab === 'werktypen') return cockpitShell('bilder', cockpitTypes());
     if (tab === 'personen') return cockpitShell('personen', cockpitPeople());
     if (tab === 'verkaeufe') return cockpitShell('verkaeufe', cockpitSales());
     if (tab === 'zahlen') return cockpitShell('zahlen', cockpitNumbers());
@@ -1255,22 +1292,100 @@
     const missing = missingFields(w);
     const state = w.hidden ? 'Ausgeblendet' : isSold(w) ? '<span class="sold-mark">Verkauft</span>' : !lot ? 'Nur zum Anschauen' : bidCount(lot) ? `${chf(B.compute(lot).price)}, ${bidCount(lot)} Gebote` : 'Noch kein Gebot';
     const title = String(w.title || '').trim() || 'Ohne Namen';
-    return `<li data-search="${esc(`${w.number} ${w.title} ${TYPE[w.type]}`.toLowerCase())}"><a href="#/cockpit/bild/${w.slug}"><img src="${w.img}" alt="" loading="lazy">
+    return `<li data-search="${esc(`${w.number} ${w.title} ${typeLabel(w)}`.toLowerCase())}"><a href="#/cockpit/bild/${w.slug}"><img src="${w.img}" alt="" loading="lazy">
       <div><div class="line"><span>${w.number}. ${esc(title)}</span></div>
       ${missing.length ? `<small class="cp-missing">Es fehlt: ${missing.join(', ')}</small>` : ''}
-      <small>${TYPE[w.type]}, ${sizeText(w)}</small>
+      <small>${esc(typeLabel(w))}, ${sizeText(w)}</small>
       ${missing.length ? '' : `<small>${lot ? `Start ${chf(lot.start)}, Sofort ${chf(lot.buyNow)}. ` : ''}${state}</small>`}</div></a></li>`;
+  }
+
+  /* ---------- Werktypen ---------- */
+
+  const typeOptions = (current) => S.types.map((t) => `<option value="${t.id}" ${t.id === current ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+  const matchesKind = (w, kind) => !S.types.some((t) => t.id === kind) || w.type === kind;
+  const KIND_LABEL = { print: 'Druck', original: 'Einzelstück' };
+  const FRAME_LABEL = { choice: 'Passepartout oder Rahmen wählbar', included: 'Schon gerahmt', none: 'Ohne Rahmenwahl' };
+
+  function typeFields(t) {
+    const option = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
+    return `<label>Name<input type="text" name="label" maxlength="60" value="${esc(t.label)}" required></label>
+      <label>Art<select name="kind">${option('print', 'Druck, mehrere Exemplare möglich', t.kind)}${option('original', 'Einzelstück', t.kind)}</select></label>
+      <label>Rahmen, nur bei Einzelstücken<select name="frame">${Object.entries(FRAME_LABEL).map(([value, label]) => option(value, label, t.frame)).join('')}</select></label>
+      <label>Technik als Vorschlag für neue Bilder<input type="text" name="technique" maxlength="160" value="${esc(t.technique)}"></label>
+      <p class="field-error type-error" hidden></p>`;
+  }
+
+  function typeRow(t) {
+    const count = WERKE.filter((w) => w.type === t.id).length;
+    const others = S.types.filter((x) => x.id !== t.id);
+    const canDelete = others.length > 0;
+    return `<details class="type-row">
+      <summary><span><b>${esc(t.label)}</b><small>${count === 1 ? '1 Bild' : `${count} Bilder`}, ${KIND_LABEL[t.kind]}${t.kind === 'original' ? `, ${FRAME_LABEL[t.frame]}` : ''}</small></span></summary>
+      <form class="stack cp-form" data-form="type-save" data-type="${t.id}">
+        ${typeFields(t)}
+        <button class="btn wide">Speichern</button>
+        ${canDelete ? `<div class="type-delete">
+          ${count ? `<label>${count === 1 ? 'Das Bild' : `Die ${count} Bilder`} danach zuordnen zu<select name="moveTo">${others.map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join('')}</select></label>` : ''}
+          <button type="button" class="btn ghost wide" data-act="type-delete" data-type="${t.id}">Werktyp löschen</button>
+        </div>` : ''}
+      </form>
+    </details>`;
+  }
+
+  function cockpitTypes() {
+    return `<a class="back" href="#/cockpit/bilder">Zu allen Bildern</a>
+      <h2 class="upload-title">Werktypen</h2>
+      <p class="note cp-note">Diese Auswahl erscheint beim Hochladen, bei jedem Bild und im Filter der Galerie. Ein neuer Name gilt sofort für alle Bilder dieses Werktyps.</p>
+      <div class="type-list">${S.types.map(typeRow).join('')}</div>
+      <details class="type-row type-new">
+        <summary><span><b>Neuen Werktyp anlegen</b></span></summary>
+        <form class="stack cp-form" data-form="type-save">
+          ${typeFields({ label: '', kind: 'original', frame: 'choice', technique: '' })}
+          <button class="btn wide">Werktyp anlegen</button>
+        </form>
+      </details>`;
+  }
+
+  function saveType(form, data) {
+    const fail = (text) => { const el = $('.type-error', form); el.textContent = text; el.hidden = false; };
+    const id = form.dataset.type;
+    const label = String(data.get('label')).trim();
+    if (!label) return fail('Bitte gib dem Werktyp einen Namen.');
+    if (S.types.some((t) => t.id !== id && t.label.toLowerCase() === label.toLowerCase())) return fail('Diesen Namen gibt es schon.');
+    const kind = data.get('kind');
+    const values = { label, kind, frame: kind === 'print' ? 'none' : data.get('frame'), technique: String(data.get('technique')).trim() };
+    if (id) Object.assign(typeById(id), values);
+    else S.types.push({ id: `typ${Date.now()}`, ...values });
+    harmonyCache = null;
+    save();
+    route(true);
+    toast(id ? 'Werktyp gespeichert.' : 'Werktyp angelegt.');
+  }
+
+  function deleteType(button) {
+    const id = button.dataset.type;
+    const used = WERKE.filter((w) => w.type === id);
+    const moveField = button.closest('form').querySelector('[name="moveTo"]');
+    const target = moveField ? typeById(moveField.value) : null;
+    const question = used.length ? `Werktyp löschen und ${used.length === 1 ? 'das Bild' : `die ${used.length} Bilder`} zu «${target.label}» verschieben?` : 'Diesen Werktyp löschen?';
+    if (!confirm(question)) return;
+    used.forEach((w) => {
+      const long = Math.max(...w.sizeCm);
+      S.edits[w.id] = { ...(S.edits[w.id] || {}), type: target.id, format: target.kind !== 'print' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross' };
+    });
+    S.types = S.types.filter((t) => t.id !== id);
+    if (filter.type === id) filter.type = null;
+    applyEdits();
+    harmonyCache = null;
+    save();
+    route(true);
+    toast('Werktyp gelöscht.');
   }
 
   /* ---------- Bilder hochladen ---------- */
 
-  const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
   const UPLOAD_MAX_MB = 40, UPLOAD_MAX_EDGE = 1800, UPLOAD_LOW_EDGE = 1500;
-  const UPLOAD_TECHNIQUE = {
-    print_aluminium: 'Lichtechter Pigmentdruck auf Hahnemühlepapier, auf eine Aluminiumplatte aufgezogen',
-    original: 'Bleistiftzeichnung',
-    original_framed: 'Bleistiftzeichnung, gerahmt',
-  };
   const uploadForm = { type: 'print_aluminium', height: '', width: '', start: '', buyNow: '', inc: '20' };
   let uploadRun = null;
 
@@ -1341,14 +1456,15 @@
 
   function addUpload(file, shrunk) {
     const f = uploadForm;
+    const type = typeById(f.type);
     const id = Math.max(...WERKE.map((w) => w.id)) + 1;
     const height = uploadNumber(f.height) || 0, width = uploadNumber(f.width) || 0;
     const long = Math.max(height, width);
     const meta = {
       id, number: Math.max(...WERKE.map((w) => w.number)) + 1, slug: String(id).padStart(3, '0'), motif: 10000 + id,
       uploaded: true, file: file.name, fileSize: file.size, w: shrunk.w, h: shrunk.h,
-      title: titleFromFile(file.name), themes: [], type: f.type, technique: UPLOAD_TECHNIQUE[f.type],
-      format: f.type !== 'print_aluminium' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
+      title: titleFromFile(file.name), themes: [], type: type.id, technique: type.technique,
+      format: type.kind !== 'print' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
       sizeCm: [height, width], colors: [['#e8e6df', 1]], families: [], mode: 'auction',
       start: uploadNumber(f.start), inc: uploadNumber(f.inc), buyNow: uploadNumber(f.buyNow), rival: 0, seedBids: [],
     };
@@ -1376,7 +1492,7 @@
     for (const file of list) {
       const name = esc(file.name);
       try {
-        if (!UPLOAD_TYPES.includes(file.type)) run.problems.push(`${name}: Nur JPG, PNG oder WebP sind möglich.`);
+        if (!UPLOAD_TYPES.includes(file.type)) run.problems.push(`${name}: Nur Fotos als JPG, PNG, WebP oder HEIC sind möglich.`);
         else if (file.size > UPLOAD_MAX_MB * 1024 * 1024) run.problems.push(`${name}: Die Datei ist grösser als ${UPLOAD_MAX_MB} MB.`);
         else if (S.uploads.some((u) => u.file === file.name && u.fileSize === file.size)) run.problems.push(`${name}: Dieses Bild ist schon hochgeladen.`);
         else {
@@ -1418,11 +1534,12 @@
 
   function cockpitUpload() {
     const f = uploadForm;
-    const field = (key, label, step) => `<label>${label}<input type="number" min="1" step="${step}" data-up="${key}" value="${esc(f[key])}"></label>`;
+    const field = (key, label, step) => `<label>${label}<input type="number" inputmode="${step === '1' ? 'numeric' : 'decimal'}" min="1" step="${step}" data-up="${key}" value="${esc(f[key])}"></label>`;
     return `<a class="back" href="#/cockpit/bilder">Zu allen Bildern</a>
       <h2 class="upload-title">Bilder hochladen</h2>
       <form class="stack cp-form upload-form" onsubmit="return false">
-        <label>Was lädst du hoch?<select data-up="type">${Object.entries(TYPE).map(([key, label]) => `<option value="${key}" ${f.type === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+        <label>Was lädst du hoch?<select data-up="type">${typeOptions(typeById(f.type).id)}</select></label>
+        <a class="type-link" href="#/cockpit/werktypen">Werktypen verwalten</a>
         <details class="upload-more">
           <summary>Angaben für alle Bilder dieses Uploads</summary>
           <p class="note">Freiwillig. Praktisch, wenn viele Bilder gleich gross sind oder gleich viel kosten. Jedes Bild lässt sich danach einzeln ändern.</p>
@@ -1433,7 +1550,7 @@
         <label class="upload-drop" id="upload-drop">
           <input type="file" id="upload-input" accept="${UPLOAD_TYPES.join(',')}" multiple>
           <b>Bilder auswählen</b>
-          <span>oder hierher ziehen. JPG, PNG oder WebP, bis ${UPLOAD_MAX_MB} MB pro Bild.</span>
+          <span><span class="only-mouse">oder hierher ziehen. </span>Aus Fotos oder Dateien, bis ${UPLOAD_MAX_MB} MB pro Bild.</span>
         </label>
       </form>
       <div id="upload-status" aria-live="polite">${uploadStatusHtml()}</div>
@@ -1471,6 +1588,7 @@
     if (!incomplete.length) cockpitOnlyMissing = false;
     const list = (cockpitOnlyMissing ? incomplete : [...WERKE]).sort((a, b) => (missingFields(b).length ? 1 : 0) - (missingFields(a).length ? 1 : 0) || a.number - b.number);
     return `<a class="btn wide upload-cta" href="#/cockpit/hochladen">Bilder hochladen</a>
+      <a class="type-link" href="#/cockpit/werktypen">Werktypen verwalten</a>
       <p class="note cp-note">Tippe auf ein Bild, um Namen, Preise und Masse zu ändern.</p>
       <div class="chips cp-filter">
         <button type="button" class="chip" data-act="cp-filter" data-only="0" aria-pressed="${!cockpitOnlyMissing}">Alle (${WERKE.length})</button>
@@ -1518,12 +1636,11 @@
       </nav>
       ${missing.length ? `<p class="cp-todo cp-todo-static"><b>Es fehlt noch: ${missing.join(', ')}</b><span>Erst dann erscheint das Bild öffentlich.</span></p>` : ''}
       <div class="cp-editor">
-        <div><img class="cp-editor-img" src="${w.img}" alt="">
+        <div class="cp-editor-side"><img class="cp-editor-img" src="${w.img}" alt="">
           <dl class="facts cp-facts">
             <dt>Per QR-Code</dt><dd>${views.qr} Aufrufe</dd>
             <dt>Aus der Galerie</dt><dd>${views.total - views.qr} Aufrufe</dd>
             <dt>Gebote</dt><dd>${lot ? bidCount(lot) : 0}</dd>
-            ${siblingOf(w) ? `<dt>Gleicher Titel</dt><dd><a href="#/cockpit/bild/${siblingOf(w).slug}">Nr. ${siblingOf(w).number}, ${SIBLING_LABEL[siblingOf(w).type]}</a></dd>` : ''}
             ${lot && B.compute(lot).leader ? `<dt>${isSold(w) ? 'Käufer' : 'Es führt'}</dt><dd>${esc(personName(B.compute(lot).leader))}, ${chf(B.compute(lot).price)}</dd>` : ''}
           </dl>
           ${lot ? cockpitMaxima(lot) : ''}
@@ -1545,26 +1662,25 @@
         </div>
         <form class="stack cp-form" data-form="work-edit" data-work="${w.id}">
           <label ${miss('Name')}>Name<input type="text" name="title" value="${esc(w.title)}"></label>
-          ${w.type !== 'print_aluminium' || w.uploaded ? `<label>Werktyp<select name="type">
-            ${w.uploaded ? `<option value="print_aluminium" ${w.type === 'print_aluminium' ? 'selected' : ''}>${TYPE.print_aluminium}</option>` : ''}
-            <option value="original" ${w.type === 'original' ? 'selected' : ''}>${TYPE.original}</option>
-            <option value="original_framed" ${w.type === 'original_framed' ? 'selected' : ''}>${TYPE.original_framed}</option></select></label>` : `<p class="note">${TYPE[w.type]}</p>`}
+          ${titleLinkHint(w)}
+          <label>Werktyp<select name="type">${typeOptions(typeOf(w).id)}</select></label>
+          <a class="type-link" href="#/cockpit/werktypen">Werktypen verwalten</a>
           <div class="cp-two">
-            <label ${miss('Masse')}>Höhe in cm<input type="number" name="height" min="1" step="0.1" value="${w.sizeCm[0] || ''}"></label>
-            <label ${miss('Masse')}>Breite in cm<input type="number" name="width" min="1" step="0.1" value="${w.sizeCm[1] || ''}"></label>
+            <label ${miss('Masse')}>Höhe in cm<input type="number" name="height" inputmode="decimal" min="1" step="0.1" value="${w.sizeCm[0] || ''}"></label>
+            <label ${miss('Masse')}>Breite in cm<input type="number" name="width" inputmode="decimal" min="1" step="0.1" value="${w.sizeCm[1] || ''}"></label>
           </div>
           <label ${miss('Technik')}>Technik<input type="text" name="technique" value="${esc(w.technique)}"></label>
-          ${isOriginal(w) ? `<div class="cp-two">
+          ${isOriginal(w) && typeOf(w).frame !== 'none' ? `<div class="cp-two">
             <label>Passepartout-Rand pro Seite in cm<input type="number" name="matCm" min="0" max="40" step="0.5" value="${matCm(w)}" required></label>
             <label>Rahmenleiste pro Seite in cm<input type="number" name="frameCm" min="0" max="20" step="0.1" value="${frameCm(w)}" required></label>
           </div>
           <p class="note cp-frame-total" id="cp-frame-total" aria-live="polite">${frameTotal(w.sizeCm[0], w.sizeCm[1], matCm(w), frameCm(w))}</p>
           <label class="check"><input type="checkbox" name="applyAll"> <span>Diese beiden Randmasse für alle Zeichnungen übernehmen</span></label>` : ''}
           ${lot ? `<div class="cp-two">
-            <label ${miss('Startpreis')}>Startpreis in CHF<input type="number" name="start" min="1" step="1" value="${money(w.start)}" ${lock}></label>
-            <label ${miss('Sofortpreis')}>Sofortpreis in CHF<input type="number" name="buyNow" min="1" step="1" value="${money(w.buyNow)}" ${lock}></label>
+            <label ${miss('Startpreis')}>Startpreis in CHF<input type="number" name="start" inputmode="numeric" min="1" step="1" value="${money(w.start)}" ${lock}></label>
+            <label ${miss('Sofortpreis')}>Sofortpreis in CHF<input type="number" name="buyNow" inputmode="numeric" min="1" step="1" value="${money(w.buyNow)}" ${lock}></label>
           </div>
-          <label ${miss('Bietschritt')}>Bietschritt in CHF<input type="number" name="inc" min="1" step="1" value="${money(w.inc)}" ${lock}></label>
+          <label ${miss('Bietschritt')}>Bietschritt in CHF<input type="number" name="inc" inputmode="numeric" min="1" step="1" value="${money(w.inc)}" ${lock}></label>
           ${locked ? '<p class="note">Sobald jemand geboten hat, bleiben die Preise fest. Das ist fair gegenüber den Bietenden.</p>' : ''}` : ''}
           <label class="check"><input type="checkbox" name="visible" ${w.hidden ? '' : 'checked'}> <span>In der Galerie zeigen</span></label>
           <p class="field-error" id="edit-error" hidden></p>
@@ -1679,12 +1795,9 @@
   }
 
   function salesByType() {
-    const groups = [
-      ['Bildtafeln', (w) => w.type === 'print_aluminium'],
-      ['Zeichnungen', (w) => w.type === 'original'],
-      ['Gerahmte Zeichnungen', (w) => w.type === 'original_framed'],
-    ].map(([label, test]) => {
-      const list = WERKE.filter((w) => test(w) && w.mode === 'auction');
+    const groups = S.types.map((t) => {
+      const label = esc(t.label);
+      const list = WERKE.filter((w) => w.type === t.id && w.mode === 'auction');
       const sold = list.filter(isSold);
       const sum = sold.reduce((t, w) => t + soldPrice(w), 0);
       const open = list.filter((w) => !isSold(w) && bidCount(lotOf(w)) > 0).reduce((t, w) => t + B.compute(lotOf(w)).price, 0);
@@ -1752,13 +1865,13 @@
       const money = auction.filter((w) => bidCount(lotOf(w)) > 0).reduce((sum, w) => sum + B.compute(lotOf(w)).price, 0);
       return { n: list.length, bidded: bidded.length, money };
     };
-    const prints = group((w) => w.type === 'print_aluminium');
-    const drawings = group((w) => w.type !== 'print_aluminium');
     return `<section class="stats" aria-label="Aufrufe">
         <div class="stat"><b>${sumOf(qr).toLocaleString('de-CH')}</b><span>Aufrufe per QR-Code vor Ort</span></div>
         <div class="stat"><b>${sumOf(gallery).toLocaleString('de-CH')}</b><span>Aufrufe aus der Galerie</span></div>
-        <div class="stat"><b>${prints.bidded} von ${prints.n}</b><span>Bildtafeln mit Gebot, ${chf(prints.money)}</span></div>
-        <div class="stat"><b>${drawings.bidded} von ${drawings.n}</b><span>Zeichnungen mit Gebot, ${chf(drawings.money)}</span></div>
+        ${S.types.map((t) => {
+          const g = group((w) => w.type === t.id);
+          return `<div class="stat"><b>${g.bidded} von ${g.n}</b><span>${esc(t.label)} mit Gebot, ${chf(g.money)}</span></div>`;
+        }).join('')}
       </section>
       <div class="atelier-grid">
         <section><h2>Vor Ort am meisten gescannt</h2>${top(qr, 'qr')}</section>
@@ -1884,7 +1997,7 @@
     const q = S.qr;
     return [...WERKE].sort((a, b) => a.number - b.number).filter((w) =>
       w.mode === 'auction' && w.number >= q.from && w.number <= q.to &&
-      (q.kind === 'all' || (q.kind === 'print') === (w.type === 'print_aluminium')));
+      matchesKind(w, q.kind));
   }
 
   // Passt der Code in die Zelle? Text und Bild nehmen Platz weg, A4 mit 10 mm Rand
@@ -1976,7 +2089,7 @@
             <label>Grösse in cm<input type="number" data-qr="size" min="1" max="18" step="0.5" value="${q.size}"></label>
             <label>Pro A4-Seite<select data-qr="perPage">${Object.keys(QR_GRID).map((n) => option(n, n, q.perPage)).join('')}</select></label>
           </div>
-          <label>Welche Bilder<select data-qr="kind">${option('all', 'Alle zum Bieten', q.kind)}${option('print', 'Nur Bildtafeln', q.kind)}${option('drawing', 'Nur Zeichnungen', q.kind)}</select></label>
+          <label>Welche Bilder<select data-qr="kind">${option('all', 'Alle zum Bieten', q.kind)}${S.types.map((t) => option(t.id, esc(t.label), q.kind)).join('')}</select></label>
           <div class="cp-two">
             <label>Von Nummer<input type="number" data-qr="from" min="1" step="1" value="${q.from}"></label>
             <label>Bis Nummer<input type="number" data-qr="to" min="1" step="1" value="${q.to}"></label>
@@ -2002,7 +2115,7 @@
   function catWorks() {
     const c = S.cat;
     const rank = (w) => (c.order === 'number' ? w.number : matchGroup(w) === 'pencil' ? 1e6 + w.number : harmonyOrder().get(w.id));
-    return WERKE.filter((w) => isShown(w) && (c.kind === 'all' || (c.kind === 'print') === (w.type === 'print_aluminium')))
+    return WERKE.filter((w) => isShown(w) && matchesKind(w, c.kind))
       .sort((a, b) => rank(a) - rank(b));
   }
 
@@ -2010,7 +2123,7 @@
     const c = S.cat;
     const head = [c.number ? `<b>${w.number}</b>` : '', c.title ? esc(w.title) : ''].filter(Boolean).join(' ');
     const lines = [];
-    if (c.size) lines.push(`${TYPE[w.type]}, ${sizeText(w)}`);
+    if (c.size) lines.push(`${esc(typeLabel(w))}, ${sizeText(w)}`);
     if (c.technique) lines.push(esc(w.technique));
     if (isSold(w)) lines.push('<span class="sold-mark">Verkauft</span>');
     else if (w.mode === 'not_for_sale') lines.push('Nur zum Anschauen');
@@ -2035,7 +2148,7 @@
     const pages = [];
     const total = Math.ceil(works.length / each) + (c.cover ? 1 : 0);
     if (c.cover) {
-      const hero = works.find((w) => w.type === 'print_aluminium') || works[0];
+      const hero = works.find(isPrint) || works[0];
       pages.push(`<div class="qr-page cat-page cat-cover">
         ${hero ? `<div class="cat-cover-img"><img src="${hero.img}" alt=""></div>` : ''}
         <h1>${esc(c.heading)}</h1><p>${esc(c.subheading)}</p>
@@ -2084,7 +2197,7 @@
             <label>Bilder pro Seite<select data-cat="perPage">${Object.keys(CAT_GRID).map((n) => option(n, n, c.perPage)).join('')}</select></label>
             <label>Reihenfolge<select data-cat="order">${option('harmony', 'Harmonie', c.order)}${option('number', 'Nummer', c.order)}</select></label>
           </div>
-          <label>Welche Bilder<select data-cat="kind">${option('all', 'Alle', c.kind)}${option('print', 'Nur Bildtafeln', c.kind)}${option('drawing', 'Nur Zeichnungen', c.kind)}</select></label>
+          <label>Welche Bilder<select data-cat="kind">${option('all', 'Alle', c.kind)}${S.types.map((t) => option(t.id, esc(t.label), c.kind)).join('')}</select></label>
           <label>Titel<input type="text" data-cat="heading" value="${esc(c.heading)}"></label>
           <label>Untertitel<input type="text" data-cat="subheading" value="${esc(c.subheading)}"></label>
           <div class="qr-boxes">${box('cover', 'Deckblatt')}${box('number', 'Nummer')}${box('title', 'Name')}${box('size', 'Werktyp und Masse')}${box('technique', 'Technik')}${box('start', 'Startpreis')}${box('buy', 'Sofortpreis')}${box('qr', 'QR-Code')}${box('pages', 'Seitenzahlen')}${box('cellBox', 'Feine Linie um jedes Bild')}</div>
@@ -2228,8 +2341,8 @@
     S.me = { first: 'Christoph' };
     const now = Date.now();
     const free = (test) => WERKE.find((w) => isShown(w) && w.mode === 'auction' && !w.boughtBy && !lotOf(w).log.length && test(w) && B.ownMax(lotOf(w), ME) === null);
-    const color = (w) => w.type === 'print_aluminium';
-    const drawing = (w) => w.type === 'original';
+    const color = isPrint;
+    const drawing = isOriginal;
     // Führt, Maximum deutlich über dem Preis
     let w = free(color);
     B.place(lotOf(w), ME, (w.start + 100) * 100, now - 500 * MIN);
@@ -2283,7 +2396,7 @@
   // Hat sich inzwischen etwas geändert, zum Beispiel ein Gebot oder ein Herz, wird sie normal neu erstellt.
   const CACHED_PAGES = new Set(['', 'katalog', 'begehrt', 'favoriten']);
   const viewCache = new Map();
-  const viewStamp = () => JSON.stringify([columnCount(), S.me, S.favs, S.edits, S.frames, WERKE.map((w) => {
+  const viewStamp = () => JSON.stringify([columnCount(), S.me, S.favs, S.edits, S.frames, S.types, WERKE.map((w) => {
     const lot = lotOf(w);
     return lot ? `${lot.log.length}/${lot.entries.length}/${lot.sold ? 1 : 0}/${lot.endsAt}` : '';
   }).join()]);
@@ -2329,6 +2442,7 @@
       if (applied) return;
       applied = true;
       const main = $('#main');
+      document.documentElement.classList.toggle('in-cockpit', page === 'cockpit');
       if (keepScroll !== true && CACHED_PAGES.has(prevPage)) viewCache.set(prevPage, { nodes: [...main.childNodes], stamp });
       if (restored) main.replaceChildren(...restored);
       else main.innerHTML = html;
@@ -2456,6 +2570,7 @@
       afterChange(workId);
     }
     if (act === 'demo-rival' && !rivalBid(byId.get(workId), true)) toast('Hier ist kein fremdes Gebot mehr möglich.');
+    if (act === 'type-delete') deleteType(el);
     if (act === 'upload-delete' && confirm('Dieses Bild wirklich löschen?')) deleteUpload(byId.get(workId));
     if (act === 'reset') {
       if (S.uploads.length && !confirm('Zurücksetzen löscht auch alle hochgeladenen Bilder auf diesem Gerät. Fortfahren?')) return;
@@ -2472,6 +2587,7 @@
     if (!form) return;
     e.preventDefault();
     const data = new FormData(form);
+    if (form.dataset.form === 'type-save') return saveType(form, data);
     if (form.dataset.form === 'cockpit-login') {
       if (data.get('password') === 'benedikt') { cockpitOpen = true; route(true); } else $('#cockpit-error').hidden = false;
     }
@@ -2483,10 +2599,10 @@
       const long = Math.max(height, width);
       const edit = {
         title, technique, sizeCm: [height, width], hidden: !data.get('visible'),
-        format: (data.get('type') || w.type) !== 'print_aluminium' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
+        format: typeById(data.get('type') || w.type).kind !== 'print' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
       };
       if (data.get('type')) edit.type = data.get('type');
-      if (w.uploaded && edit.type && technique === UPLOAD_TECHNIQUE[w.type]) edit.technique = UPLOAD_TECHNIQUE[edit.type];
+      if (edit.type && technique === typeOf(w).technique) edit.technique = typeById(edit.type).technique;
       if (isOriginal(w) && data.has('matCm')) {
         const mat = Number(data.get('matCm')), frame = Number(data.get('frameCm'));
         if (!(mat >= 0 && frame >= 0)) return fail('Bitte gib gültige Masse für Passepartout und Rahmen an.');
@@ -2550,6 +2666,7 @@
     tip.style.top = `${Math.max(0, point.y / 200 * box.height - 38)}px`;
   }
   document.addEventListener('pointermove', salesHover);
+  document.addEventListener('pointerdown', salesHover); // Auf dem iPhone zeigt ein Tippen den Wert
   document.addEventListener('pointerdown', salesHover);
 
   document.addEventListener('input', (e) => {

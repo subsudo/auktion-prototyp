@@ -515,7 +515,23 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -.02em; }
 .cp-todo b { display: block; font-weight: 600; }
 .cp-todo span { display: block; font-size: .88rem; }
 .cp-filter { margin-bottom: 14px; }
+.title-hint { margin: -4px 0 2px; font-size: .86rem; line-height: 1.35; }
+.title-hint.is-linked { color: var(--lead); }
+.title-hint.is-near { padding: 8px 10px; background: var(--sold-soft); color: var(--sold); }
+.title-hint a { color: inherit; font-weight: 600; }
 .upload-cta { margin-top: 16px; }
+.type-link { display: inline-block; margin-top: 8px; font-size: .9rem; color: var(--muted); }
+.type-list { border-top: 1px solid var(--line); max-width: 560px; }
+.type-row { max-width: 560px; border-bottom: 1px solid var(--line); }
+.type-row summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; padding: 8px 0; cursor: pointer; list-style: none; }
+.type-row summary::-webkit-details-marker { display: none; }
+.type-row summary::after { content: ""; flex: none; width: 7px; height: 7px; margin: -3px 4px 0 0; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); transition: transform .15s ease; }
+.type-row[open] summary::after { margin-top: 3px; transform: rotate(-135deg); }
+.type-row summary b { display: block; font-weight: 600; }
+.type-row summary small { display: block; color: var(--muted); font-size: .85rem; }
+.type-row form { padding: 4px 0 18px; }
+.type-delete { display: grid; gap: 10px; margin-top: 8px; }
+.type-new { margin-top: 8px; }
 .upload-title { margin: 4px 0 14px; }
 .upload-form { max-width: 560px; }
 .upload-more summary { min-height: 44px; display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 500; list-style: none; }
@@ -687,4 +703,35 @@ a.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--acc
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
+/* ---------- Cockpit auf dem iPhone (iPhone 15 Pro: 393 x 852 Punkte) ---------- */
+main { padding-left: max(var(--gutter), env(safe-area-inset-left)); padding-right: max(var(--gutter), env(safe-area-inset-right)); }
+@media (hover: none) { .only-mouse { display: none; } }
+@media (max-width: 899px) {
+  .in-cockpit { -webkit-tap-highlight-color: rgba(0, 0, 0, .06); }
+  .in-cockpit .site-foot { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  /* Die Rubriken bleiben beim Scrollen erreichbar */
+  .in-cockpit .cp-tabs { position: sticky; top: 0; z-index: 8; justify-content: space-between; gap: 8px; margin-inline: calc(var(--gutter) * -1); padding: env(safe-area-inset-top) var(--gutter) 0; background: var(--bg); font-size: .84rem; }
+  .in-cockpit .cp-tabs a { display: inline-flex; align-items: center; min-height: 46px; padding: 0 2px; }
+  /* Finger brauchen mindestens 44 Punkte */
+  .in-cockpit main .back, .in-cockpit .type-link, .in-cockpit .cp-head .linklike, .in-cockpit .cp-section-head .linklike { display: inline-flex; align-items: center; min-height: 44px; margin-block: 0; }
+  .in-cockpit main .chip { min-height: 44px; }
+  .in-cockpit main .check { align-items: center; min-height: 44px; }
+  .in-cockpit main .check input { margin-top: 0; }
+  .in-cockpit .cp-mail a, .in-cockpit .cp-people .history a, .in-cockpit .title-hint a, .in-cockpit .cp-editor-side > p a { display: inline-block; padding-block: 13px; }
+  .in-cockpit .title-hint { margin-block: -8px; }
+  .in-cockpit .title-hint.is-near { margin-block: 0; }
+  .in-cockpit .cp-people .history li { align-items: center; }
+  .in-cockpit .cp-search input { min-height: 48px; }
+  .in-cockpit .cp-form input:not([type="checkbox"]), .in-cockpit .cp-form select { min-height: 48px; font-size: 16px; }
+  .in-cockpit .work-nav { gap: 0 16px; margin-bottom: 4px; }
+  /* Beim Bearbeiten stehen Bild und Felder zuoberst, Statistik und QR-Code danach */
+  .in-cockpit .cp-editor { display: flex; flex-direction: column; gap: 16px; }
+  .in-cockpit .cp-editor-side { display: contents; }
+  .in-cockpit .cp-editor-img { order: 1; align-self: center; max-height: 38vh; }
+  .in-cockpit .cp-editor > form { order: 2; width: 100%; }
+  .in-cockpit .cp-editor-side > :not(.cp-editor-img) { order: 3; width: 100%; }
+  .in-cockpit [data-form="work-edit"] > .btn:not(.ghost) { position: sticky; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 6; box-shadow: 0 6px 18px rgba(0, 0, 0, .22); }
+  .in-cockpit .sales-chart { touch-action: pan-y; }
 }
