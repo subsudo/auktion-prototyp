@@ -515,6 +515,27 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -.02em; }
 .cp-todo b { display: block; font-weight: 600; }
 .cp-todo span { display: block; font-size: .88rem; }
 .cp-filter { margin-bottom: 14px; }
+.upload-cta { margin-top: 16px; }
+.upload-title { margin: 4px 0 14px; }
+.upload-form { max-width: 560px; }
+.upload-more summary { min-height: 44px; display: flex; align-items: center; gap: 10px; cursor: pointer; font-weight: 500; list-style: none; }
+.upload-more summary::-webkit-details-marker { display: none; }
+.upload-more summary::before { content: ""; flex: none; width: 7px; height: 7px; margin-top: -3px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); transition: transform .15s ease; }
+.upload-more[open] summary::before { margin-top: 3px; transform: rotate(-135deg); }
+.upload-more > * + * { margin-top: 10px; }
+.upload-drop { position: relative; display: grid !important; gap: 4px; place-items: center; min-height: 150px; padding: 24px 16px; border: 1.5px dashed #b9b6ad; background: #f8f7f3; text-align: center; cursor: pointer; }
+.upload-drop.is-over, .upload-drop:hover { border-color: var(--text); background: var(--accent-soft); }
+.upload-drop:focus-within { outline: 2px solid var(--text); outline-offset: 2px; }
+.upload-drop input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.upload-drop b { font-size: 1.05rem; font-weight: 600; }
+.upload-drop span { color: var(--muted); font-size: .88rem; font-weight: 400; }
+#upload-status { max-width: 560px; margin-top: 16px; }
+#upload-status > * + * { margin-top: 12px; }
+.upload-progress { display: flex; align-items: center; gap: 12px; margin: 0; font-size: .9rem; }
+.upload-progress progress { flex: 1; height: 8px; accent-color: var(--text); }
+.upload-done { margin: 0; font-weight: 600; color: var(--lead); }
+.upload-problems { margin: 0; padding: 10px 14px; list-style: none; background: var(--alert-soft); color: var(--alert); font-size: .88rem; }
+.upload-problems li + li { margin-top: 6px; }
 .rank .cp-missing { color: var(--alert); font-weight: 600; }
 .cp-form label.is-missing { color: var(--alert); }
 .cp-form label.is-missing input { border: 2px solid var(--alert); background: var(--alert-soft); }

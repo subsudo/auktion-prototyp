@@ -31,7 +31,7 @@
     const lots = {};
     for (const w of WERKE) {
       if (w.mode !== 'auction') continue;
-      const lot = B.createLot({ start: w.start * 100, inc: w.inc * 100, buyNow: w.buyNow * 100, endsAt: AUCTION_END });
+      const lot = B.createLot({ start: w.start * 100, inc: w.inc * 100, buyNow: w.buyNow ? w.buyNow * 100 : null, endsAt: AUCTION_END });
       for (const [who, max, ago] of w.seedBids) {
         const r = B.place(lot, who, max * 100, now - ago * MIN - 10000);
         if (!r.ok) console.warn('Beispielgebot abgelehnt', w.title, who, r);
@@ -42,16 +42,16 @@
     // Beispielzahlen für das Atelier: Aufrufe insgesamt und davon per QR-Code vor Ort
     const views = {};
     for (const w of WERKE) {
-      const total = 4 + (w.id * 13) % 34 + (lots[w.id] ? lots[w.id].log.length * 6 : 0);
+      const total = w.uploaded ? 0 : 4 + (w.id * 13) % 34 + (lots[w.id] ? lots[w.id].log.length * 6 : 0);
       views[w.id] = { total, qr: Math.round(total * (0.2 + (w.id % 4) * 0.1)) };
     }
     // Zum Vorzeigen: Ein paar Bilder ohne Gebote sind noch nicht fertig erfasst
     const gaps = [{ title: '' }, { start: null, buyNow: null }, { sizeCm: [0, 0] }, { technique: '' }, { buyNow: null }, { title: '', start: null, buyNow: null }, { sizeCm: [0, 0], start: null }, { inc: null }, { technique: '', buyNow: null }];
     const heroes = ['bilder/047.jpg', 'bilder/013.jpg', 'bilder/004.jpg'];
-    const drafts = WERKE.filter((w) => w.mode === 'auction' && !w.seedBids.length && !w.boughtBy && !heroes.includes(w.img)).filter((_, i) => i % 17 === 3).slice(0, gaps.length);
+    const drafts = WERKE.filter((w) => !w.uploaded && w.mode === 'auction' && !w.seedBids.length && !w.boughtBy && !heroes.includes(w.img)).filter((_, i) => i % 17 === 3).slice(0, gaps.length);
     const edits = {};
     drafts.forEach((w, i) => { edits[w.id] = gaps[i]; });
-    return { lots, me: null, edits, qr: { ...QR_DEFAULT }, cat: { ...CAT_DEFAULT }, views, scans: [], frames: {}, favs: [] };
+    return { lots, me: null, edits, qr: { ...QR_DEFAULT }, cat: { ...CAT_DEFAULT }, views, scans: [], frames: {}, favs: [], uploads: [] };
   }
 
   function load() {
@@ -66,18 +66,39 @@
   }
 
   let S = load();
+  // Hochgeladene Bilder: Die Angaben liegen beim Zustand, die Bilddateien in IndexedDB, weil localStorage dafür zu klein ist.
+  const BLANK_IMG = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  S.uploads = S.uploads || [];
+  function addUploadedWork(meta) {
+    const w = { ...meta, img: BLANK_IMG };
+    WERKE.push(w);
+    byId.set(w.id, w);
+    return w;
+  }
+  S.uploads.forEach(addUploadedWork);
   // Im Cockpit gespeicherte Änderungen über die Beispieldaten legen
   function applyEdits() {
     for (const [id, edit] of Object.entries(S.edits || {})) Object.assign(byId.get(Number(id)), edit);
   }
   applyEdits();
-  function resetState() {
+  // Die Demo-Ansichten behalten hochgeladene Bilder. Nur «Zurücksetzen» entfernt sie.
+  function resetState(dropUploads) {
+    const uploads = dropUploads ? [] : S.uploads;
+    const uploadEdits = {};
+    uploads.forEach((u) => { if (S.edits[u.id]) uploadEdits[u.id] = S.edits[u.id]; });
+    if (dropUploads) {
+      S.uploads.forEach((u) => byId.delete(u.id));
+      WERKE.splice(WERKE_BASE.length);
+    }
+    harmonyCache = null;
     WERKE_BASE.forEach((base) => {
       const w = byId.get(base.id);
       Object.keys(w).forEach((k) => delete w[k]);
       Object.assign(w, JSON.parse(JSON.stringify(base)));
     });
     S = seed();
+    S.uploads = uploads;
+    Object.assign(S.edits, uploadEdits);
     applyEdits();
   }
   const lotOf = (w) => S.lots[w.id];
@@ -146,13 +167,15 @@
   function matchPct(a, b) {
     const group = matchGroup(a);
     if (group !== matchGroup(b)) return 0;
-    return window.MATCHES[group].rows[matchIndex[group].get(a.id)][matchIndex[group].get(b.id)];
+    const row = window.MATCHES[group].rows[matchIndex[group].get(a.id)];
+    return row?.[matchIndex[group].get(b.id)] ?? 50; // Neu hochgeladene Bilder sind noch nicht analysiert
   }
   // Für Vorschläge zählt bei Bildtafeln der Farbmix: harmonisch, aber nicht derselbe Ton
   function suggestPct(a, b) {
     const table = window.MATCHES[matchGroup(a)];
     const index = matchIndex[matchGroup(a)];
-    return (table.mix || table.rows)[index.get(a.id)][index.get(b.id)];
+    const row = (table.mix || table.rows)[index.get(a.id)];
+    return row?.[index.get(b.id)] ?? 50;
   }
 
   // Mit ?match=1 in der Adresse zeigt der Prototyp die Prozente, damit man die Vorschläge beurteilen kann
@@ -1178,6 +1201,7 @@
     if (!cockpitOpen) return viewCockpitLogin();
     if (tab === 'bild') return cockpitShell('bilder', cockpitEditor(arg));
     if (tab === 'bilder') return cockpitShell('bilder', cockpitImages());
+    if (tab === 'hochladen') return cockpitShell('bilder', cockpitUpload());
     if (tab === 'personen') return cockpitShell('personen', cockpitPeople());
     if (tab === 'verkaeufe') return cockpitShell('verkaeufe', cockpitSales());
     if (tab === 'zahlen') return cockpitShell('zahlen', cockpitNumbers());
@@ -1238,11 +1262,216 @@
       ${missing.length ? '' : `<small>${lot ? `Start ${chf(lot.start)}, Sofort ${chf(lot.buyNow)}. ` : ''}${state}</small>`}</div></a></li>`;
   }
 
+  /* ---------- Bilder hochladen ---------- */
+
+  const UPLOAD_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const UPLOAD_MAX_MB = 40, UPLOAD_MAX_EDGE = 1800, UPLOAD_LOW_EDGE = 1500;
+  const UPLOAD_TECHNIQUE = {
+    print_aluminium: 'Lichtechter Pigmentdruck auf Hahnemühlepapier, auf eine Aluminiumplatte aufgezogen',
+    original: 'Bleistiftzeichnung',
+    original_framed: 'Bleistiftzeichnung, gerahmt',
+  };
+  const uploadForm = { type: 'print_aluminium', height: '', width: '', start: '', buyNow: '', inc: '20' };
+  let uploadRun = null;
+
+  function openImageDb() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('auktion-prototyp-bilder', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('bilder');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  async function imageStore(mode, action) {
+    const db = await openImageDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('bilder', mode);
+      const request = action(tx.objectStore('bilder'));
+      tx.oncomplete = () => { db.close(); resolve(request.result); };
+      tx.onerror = tx.onabort = () => { db.close(); reject(tx.error); };
+    });
+  }
+
+  // Neu kodieren entfernt eingebettete Daten. Der Prototyp speichert nur eine verkleinerte Fassung.
+  async function shrinkImage(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const image = new Image();
+      // Mit Zeitlimit, damit ein defektes Bild nie den ganzen Upload anhält
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('timeout')), 30000);
+        image.onload = () => { clearTimeout(timer); resolve(); };
+        image.onerror = () => { clearTimeout(timer); reject(new Error('decode')); };
+        image.src = url;
+      });
+      const edge = Math.max(image.naturalWidth, image.naturalHeight);
+      const scale = Math.min(1, UPLOAD_MAX_EDGE / edge);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.naturalWidth * scale);
+      canvas.height = Math.round(image.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+      if (!blob) throw new Error('encode');
+      return { blob, w: canvas.width, h: canvas.height, edge };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // Sprechende Dateinamen werden zum Titel, Kameranamen wie IMG_2041 nicht
+  function titleFromFile(name) {
+    const base = name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!/\p{L}{3,}/u.test(base) || /^(img|dsc|dscn|pxl|scan|bild|foto|photo|image|screenshot|benedikt)\b/i.test(base)) return '';
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  }
+
+  const uploadNumber = (value) => (value === '' ? null : Number(value));
+
+  function uploadSettingsError() {
+    const f = uploadForm;
+    const prices = [f.start, f.buyNow, f.inc].map(uploadNumber);
+    if (!prices.every((v) => v === null || (Number.isInteger(v) && v > 0))) return 'Bitte gib die Preise in ganzen Franken an.';
+    if (prices[0] !== null && prices[1] !== null && prices[1] <= prices[0]) return 'Der Sofortpreis muss höher sein als der Startpreis.';
+    if (![f.height, f.width].map(uploadNumber).every((v) => v === null || v > 0)) return 'Bitte gib gültige Masse an.';
+    return '';
+  }
+
+  function addUpload(file, shrunk) {
+    const f = uploadForm;
+    const id = Math.max(...WERKE.map((w) => w.id)) + 1;
+    const height = uploadNumber(f.height) || 0, width = uploadNumber(f.width) || 0;
+    const long = Math.max(height, width);
+    const meta = {
+      id, number: Math.max(...WERKE.map((w) => w.number)) + 1, slug: String(id).padStart(3, '0'), motif: 10000 + id,
+      uploaded: true, file: file.name, fileSize: file.size, w: shrunk.w, h: shrunk.h,
+      title: titleFromFile(file.name), themes: [], type: f.type, technique: UPLOAD_TECHNIQUE[f.type],
+      format: f.type !== 'print_aluminium' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
+      sizeCm: [height, width], colors: [['#e8e6df', 1]], families: [], mode: 'auction',
+      start: uploadNumber(f.start), inc: uploadNumber(f.inc), buyNow: uploadNumber(f.buyNow), rival: 0, seedBids: [],
+    };
+    S.uploads.push(meta);
+    const w = addUploadedWork(meta);
+    w.img = URL.createObjectURL(shrunk.blob);
+    S.lots[id] = B.createLot({ start: (meta.start || 0) * 100, inc: (meta.inc || 0) * 100, buyNow: meta.buyNow ? meta.buyNow * 100 : null, endsAt: AUCTION_END });
+    S.views[id] = { total: 0, qr: 0 };
+    return w;
+  }
+
+  async function uploadFiles(files) {
+    if (uploadRun && uploadRun.busy) return;
+    const settingsError = uploadSettingsError();
+    if (settingsError) {
+      uploadRun = { busy: false, total: 0, done: 0, added: [], problems: [settingsError] };
+      renderUploadStatus();
+      return;
+    }
+    const list = [...files];
+    const run = { busy: true, total: list.length, done: 0, added: [], problems: [] };
+    uploadRun = run;
+    renderUploadStatus();
+    try { await navigator.storage?.persist?.(); } catch (err) { /* dann eben ohne Zusage */ }
+    for (const file of list) {
+      const name = esc(file.name);
+      try {
+        if (!UPLOAD_TYPES.includes(file.type)) run.problems.push(`${name}: Nur JPG, PNG oder WebP sind möglich.`);
+        else if (file.size > UPLOAD_MAX_MB * 1024 * 1024) run.problems.push(`${name}: Die Datei ist grösser als ${UPLOAD_MAX_MB} MB.`);
+        else if (S.uploads.some((u) => u.file === file.name && u.fileSize === file.size)) run.problems.push(`${name}: Dieses Bild ist schon hochgeladen.`);
+        else {
+          const shrunk = await shrinkImage(file);
+          const w = addUpload(file, shrunk);
+          await imageStore('readwrite', (store) => store.put(shrunk.blob, w.id));
+          run.added.push(w.id);
+          if (shrunk.edge < UPLOAD_LOW_EDGE) run.problems.push(`${name}: Hochgeladen, aber mit ${shrunk.edge} Pixeln eher klein für den Katalogdruck.`);
+        }
+      } catch (err) {
+        run.problems.push(`${name}: Das Bild liess sich nicht lesen oder speichern.`);
+      }
+      run.done += 1;
+      renderUploadStatus();
+    }
+    run.busy = false;
+    harmonyCache = null;
+    S.qr.to = WERKE.length;
+    save();
+    if (location.hash === '#/cockpit/hochladen') route(true);
+  }
+
+  function uploadStatusHtml() {
+    const run = uploadRun;
+    if (!run) return '';
+    const works = run.added.map((id) => byId.get(id)).filter(Boolean);
+    const todo = works.find((w) => missingFields(w).length);
+    return `${run.busy ? `<p class="upload-progress"><progress max="${run.total}" value="${run.done}"></progress><span>${run.done} von ${run.total} Bildern</span></p>` : ''}
+      ${!run.busy && works.length ? `<p class="upload-done">${works.length === 1 ? '1 Bild' : `${works.length} Bilder`} hochgeladen.</p>` : ''}
+      ${run.problems.length ? `<ul class="upload-problems">${run.problems.map((text) => `<li>${text}</li>`).join('')}</ul>` : ''}
+      ${!run.busy && todo ? `<a class="btn wide" href="#/cockpit/bild/${todo.slug}">Fehlende Angaben ergänzen</a>` : ''}
+      ${!run.busy && works.length ? `<ul class="rank cp-list upload-list">${works.map(cockpitRow).join('')}</ul>` : ''}`;
+  }
+
+  function renderUploadStatus() {
+    const box = $('#upload-status');
+    if (box) box.innerHTML = uploadStatusHtml();
+  }
+
+  function cockpitUpload() {
+    const f = uploadForm;
+    const field = (key, label, step) => `<label>${label}<input type="number" min="1" step="${step}" data-up="${key}" value="${esc(f[key])}"></label>`;
+    return `<a class="back" href="#/cockpit/bilder">Zu allen Bildern</a>
+      <h2 class="upload-title">Bilder hochladen</h2>
+      <form class="stack cp-form upload-form" onsubmit="return false">
+        <label>Was lädst du hoch?<select data-up="type">${Object.entries(TYPE).map(([key, label]) => `<option value="${key}" ${f.type === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+        <details class="upload-more">
+          <summary>Angaben für alle Bilder dieses Uploads</summary>
+          <p class="note">Freiwillig. Praktisch, wenn viele Bilder gleich gross sind oder gleich viel kosten. Jedes Bild lässt sich danach einzeln ändern.</p>
+          <div class="cp-two">${field('height', 'Höhe in cm', '0.1')}${field('width', 'Breite in cm', '0.1')}</div>
+          <div class="cp-two">${field('start', 'Startpreis in CHF', '1')}${field('buyNow', 'Sofortpreis in CHF', '1')}</div>
+          ${field('inc', 'Bietschritt in CHF', '1')}
+        </details>
+        <label class="upload-drop" id="upload-drop">
+          <input type="file" id="upload-input" accept="${UPLOAD_TYPES.join(',')}" multiple>
+          <b>Bilder auswählen</b>
+          <span>oder hierher ziehen. JPG, PNG oder WebP, bis ${UPLOAD_MAX_MB} MB pro Bild.</span>
+        </label>
+      </form>
+      <div id="upload-status" aria-live="polite">${uploadStatusHtml()}</div>
+      <p class="proto-note">Prototyp: Die Bilder bleiben verkleinert auf diesem Gerät. In der echten Anwendung liegen sie geschützt auf dem Server. Farben und Vorschläge werden berechnet, sobald alle Bilder erfasst sind.</p>`;
+  }
+
+  function deleteUpload(w) {
+    S.uploads = S.uploads.filter((u) => u.id !== w.id);
+    WERKE.splice(WERKE.indexOf(w), 1);
+    byId.delete(w.id);
+    delete S.edits[w.id];
+    delete S.lots[w.id];
+    delete S.views[w.id];
+    delete S.frames[w.id];
+    S.favs = S.favs.filter((id) => id !== w.id);
+    S.scans = S.scans.filter((c) => c.work !== w.id);
+    harmonyCache = null;
+    imageStore('readwrite', (store) => store.delete(w.id)).catch(() => {});
+    save();
+    location.hash = '#/cockpit/bilder';
+  }
+
+  async function restoreUploadImages() {
+    if (!S.uploads.length) return;
+    try {
+      const keys = await imageStore('readonly', (store) => store.getAllKeys());
+      const blobs = await imageStore('readonly', (store) => store.getAll());
+      keys.forEach((id, i) => { const w = byId.get(id); if (w) w.img = URL.createObjectURL(blobs[i]); });
+      route(true);
+    } catch (err) { /* ohne Bildspeicher bleiben die Felder leer */ }
+  }
+
   function cockpitImages() {
     const incomplete = WERKE.filter((w) => missingFields(w).length);
     if (!incomplete.length) cockpitOnlyMissing = false;
     const list = (cockpitOnlyMissing ? incomplete : [...WERKE]).sort((a, b) => (missingFields(b).length ? 1 : 0) - (missingFields(a).length ? 1 : 0) || a.number - b.number);
-    return `<p class="note cp-note">Tippe auf ein Bild, um Namen, Preise und Masse zu ändern. Neue Bilder hochladen kommt in der echten Anwendung hierhin.</p>
+    return `<a class="btn wide upload-cta" href="#/cockpit/hochladen">Bilder hochladen</a>
+      <p class="note cp-note">Tippe auf ein Bild, um Namen, Preise und Masse zu ändern.</p>
       <div class="chips cp-filter">
         <button type="button" class="chip" data-act="cp-filter" data-only="0" aria-pressed="${!cockpitOnlyMissing}">Alle (${WERKE.length})</button>
         <button type="button" class="chip" data-act="cp-filter" data-only="1" aria-pressed="${cockpitOnlyMissing}">Fehlende Angaben (${incomplete.length})</button>
@@ -1281,7 +1510,12 @@
     const money = (r) => (r === undefined || r === null ? '' : r);
     const missing = missingFields(w);
     const miss = (name) => (missing.includes(name) ? 'class="is-missing"' : '');
-    return `<a class="back" href="#/cockpit/bilder">Zu allen Bildern</a>
+    const open = WERKE.filter((x) => x.id !== w.id && missingFields(x).length).sort((a, b) => a.number - b.number);
+    const next = open.find((x) => x.number > w.number) || open[0];
+    return `<nav class="work-nav" aria-label="Bilder im Cockpit">
+        <a class="back" href="#/cockpit/bilder">Zu allen Bildern</a>
+        ${next ? `<a class="back back-work" href="#/cockpit/bild/${next.slug}">Nächstes Bild mit fehlenden Angaben →</a>` : ''}
+      </nav>
       ${missing.length ? `<p class="cp-todo cp-todo-static"><b>Es fehlt noch: ${missing.join(', ')}</b><span>Erst dann erscheint das Bild öffentlich.</span></p>` : ''}
       <div class="cp-editor">
         <div><img class="cp-editor-img" src="${w.img}" alt="">
@@ -1311,7 +1545,8 @@
         </div>
         <form class="stack cp-form" data-form="work-edit" data-work="${w.id}">
           <label ${miss('Name')}>Name<input type="text" name="title" value="${esc(w.title)}"></label>
-          ${w.type !== 'print_aluminium' ? `<label>Werktyp<select name="type">
+          ${w.type !== 'print_aluminium' || w.uploaded ? `<label>Werktyp<select name="type">
+            ${w.uploaded ? `<option value="print_aluminium" ${w.type === 'print_aluminium' ? 'selected' : ''}>${TYPE.print_aluminium}</option>` : ''}
             <option value="original" ${w.type === 'original' ? 'selected' : ''}>${TYPE.original}</option>
             <option value="original_framed" ${w.type === 'original_framed' ? 'selected' : ''}>${TYPE.original_framed}</option></select></label>` : `<p class="note">${TYPE[w.type]}</p>`}
           <div class="cp-two">
@@ -1334,6 +1569,7 @@
           <label class="check"><input type="checkbox" name="visible" ${w.hidden ? '' : 'checked'}> <span>In der Galerie zeigen</span></label>
           <p class="field-error" id="edit-error" hidden></p>
           <button class="btn wide">Speichern</button>
+          ${w.uploaded && !bidCount(lot) ? `<button type="button" class="btn ghost wide" data-act="upload-delete" data-work="${w.id}">Bild löschen</button>` : ''}
         </form>
       </div>`;
   }
@@ -2220,9 +2456,12 @@
       afterChange(workId);
     }
     if (act === 'demo-rival' && !rivalBid(byId.get(workId), true)) toast('Hier ist kein fremdes Gebot mehr möglich.');
+    if (act === 'upload-delete' && confirm('Dieses Bild wirklich löschen?')) deleteUpload(byId.get(workId));
     if (act === 'reset') {
+      if (S.uploads.length && !confirm('Zurücksetzen löscht auch alle hochgeladenen Bilder auf diesem Gerät. Fortfahren?')) return;
       try { localStorage.removeItem(STORE); } catch (err) { /* siehe load */ }
-      resetState();
+      if (S.uploads.length) imageStore('readwrite', (store) => store.clear()).catch(() => {});
+      resetState(true);
       if (location.hash && location.hash !== '#/') location.hash = '#/';
       else route(true);
     }
@@ -2244,10 +2483,11 @@
       const long = Math.max(height, width);
       const edit = {
         title, technique, sizeCm: [height, width], hidden: !data.get('visible'),
-        format: w.type !== 'print_aluminium' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
+        format: (data.get('type') || w.type) !== 'print_aluminium' || long <= 30 ? 'Klein' : long <= 45 ? 'Mittel' : 'Gross',
       };
       if (data.get('type')) edit.type = data.get('type');
-      if (isOriginal(w)) {
+      if (w.uploaded && edit.type && technique === UPLOAD_TECHNIQUE[w.type]) edit.technique = UPLOAD_TECHNIQUE[edit.type];
+      if (isOriginal(w) && data.has('matCm')) {
         const mat = Number(data.get('matCm')), frame = Number(data.get('frameCm'));
         if (!(mat >= 0 && frame >= 0)) return fail('Bitte gib gültige Masse für Passepartout und Rahmen an.');
         edit.matCm = mat;
@@ -2313,6 +2553,7 @@
   document.addEventListener('pointerdown', salesHover);
 
   document.addEventListener('input', (e) => {
+    if (e.target.dataset.up) { uploadForm[e.target.dataset.up] = e.target.value; return; }
     const total = $('#cp-frame-total');
     if (total && e.target.form && ['height', 'width', 'matCm', 'frameCm'].includes(e.target.name)) {
       const f = e.target.form;
@@ -2341,6 +2582,11 @@
   });
 
   document.addEventListener('change', (e) => {
+    if (e.target.id === 'upload-input') {
+      uploadFiles(e.target.files);
+      e.target.value = '';
+      return;
+    }
     if (e.target.matches('[data-act-change="sort"]')) {
       filter.sort = e.target.value;
       $('#catalog-results').innerHTML = catalogResults();
@@ -2360,6 +2606,20 @@
     route();
   });
   addEventListener('resize', () => { if (columnCount() !== lastCols && !sheet.open) route(true); });
+  ['dragenter', 'dragover'].forEach((type) => document.addEventListener(type, (e) => {
+    const drop = e.target.closest?.('#upload-drop');
+    if (!drop) return;
+    e.preventDefault();
+    drop.classList.add('is-over');
+  }));
+  document.addEventListener('dragleave', (e) => e.target.closest?.('#upload-drop')?.classList.remove('is-over'));
+  document.addEventListener('drop', (e) => {
+    const drop = e.target.closest?.('#upload-drop');
+    if (!drop) return;
+    e.preventDefault();
+    drop.classList.remove('is-over');
+    uploadFiles(e.dataTransfer.files);
+  });
   sheet.addEventListener('close', parkToasts);
   $('#zoom').addEventListener('close', parkToasts);
   $('#zoom').addEventListener('click', (e) => { if (e.target.id === 'zoom') e.target.close(); });
@@ -2367,6 +2627,7 @@
   if (new URLSearchParams(location.search).has('bieter') && !S.me) loginDemo();
   route(true);
   if (currentRoute[0] === 'werk') scrollToWork(); // Auch wer per QR-Code kommt, sieht zuerst das ganze Bild
+  restoreUploadImages();
   setInterval(() => {
     if (document.hidden) return;
     tickCountdowns();
